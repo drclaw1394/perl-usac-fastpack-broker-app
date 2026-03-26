@@ -1,5 +1,10 @@
 # FastPack application (web client)
 package uSAC::FastPack::Broker::App;
+=head1 NAME
+
+uSAC::FastPack::Broker::App - Web client files for uSAC::FastPack::Broker
+
+=cut
 
 use v5.36;
 
