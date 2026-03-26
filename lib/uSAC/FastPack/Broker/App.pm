@@ -21,7 +21,7 @@ use File::ShareDir ":ALL";
 use File::Path qw<make_path>;
 use File::Basename qw<dirname>;
 
-my $share_dir=dist_dir "uSAC-FastPack";
+my $share_dir=dist_dir "uSAC-FastPack-Broker-App";
 
 
 # Return the paths of sourse files
