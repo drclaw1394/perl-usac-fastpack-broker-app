@@ -574,11 +574,18 @@ class uSACFastPackBroker {
     }
 
 
-    static bridge_to_parent(){
+    // Create a bridge to the upstream broker.
+    //
+    // Accepts a pairwsie list of matcher and type to automaticall forward
+    // The resulting bridge can be manipulatea as per normal
+    // 
+    static bridge_to_parent(forward){
+      console.log("CALLED bidge to parent");
     // Attempt to link to parent window or if top level window, attempt to
     // connect back to the host we loaded from
     //
-    let forward=[".*"];
+    //let forward=["remote_end_point"];//=[".*"];
+    forward||=[];   
     try {
       if(window.self !== window.top){
         //Inside an iframe;
@@ -592,6 +599,7 @@ class uSACFastPackBroker {
       
     }
     catch(e){
+      console.log("---COULD NOT CREATE BRIDGE TO PARENT? ", e);
       // Cross origin restrictions, we are likely a iframe
       //window.parent_bridge=new uSACFastPackBrokerBridgeFrame(broker, forward, window.top);
     }

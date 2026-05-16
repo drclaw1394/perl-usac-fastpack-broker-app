@@ -16,6 +16,7 @@ use Data::JPack;
 use Data::JPack::App;
 use Template::Plexsite;
 
+use Data::FastPack::App;
 use File::ShareDir ":ALL";
 
 use File::Path qw<make_path>;
@@ -58,6 +59,8 @@ sub add_to_container {
   my (undef, $t)=@_;
 
   return unless $t isa Template::Plexsite;
+
+  Data::FastPack::App->add_to_container($t);
 
   Data::JPack::App->localize_table ($t, sub {
 

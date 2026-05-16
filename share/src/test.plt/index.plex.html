@@ -1,20 +1,11 @@
 @{[ init {
 
-  output location=>"test", title=>"Upload";
+  output location=>"test", inline_only=>1;
+  inherit Data::JPack::App;
+  inject Data::JPack::Bootstrap::App;
+  inject uSAC::FastPack::Broker::App;
 
-  use File::ShareDir ":ALL";
-  my $share=dist_dir "DGRT-Inspection-Web";
-  my $parent_root= "$share/src";
 
-  inherit  "templates/dgrt.plt", $parent_root;
-
-  lander location=>"/", name=>"index.html";
-
-  use Data::FastPack::App;
-  Data::FastPack::App::add_to_jpack_container(sys_path_build);
-
-  use uSAC::FastPack::Broker::App;
-  uSAC::FastPack::Broker::App::add_to_jpack_container(sys_path_build);
 
 }
 ]}

@@ -32,32 +32,38 @@
     //Create a new broker if needed
     window.broker||=new uSACFastPackBroker();
 
-    console.log("-=-==-=- FIRST LISTEN");
-    broker.listen(undefined, "test", (msg)=>{
-      console.log("--GOT Message TEST, with value", msg);
-    });
-
-    let cbb=(msg)=>{
-      console.log("--GOT Message TEST AGAIN, with value", msg);
-    };
-
-    console.log("-=-==-=- SECOND LISTEN");
-    broker.listen(undefined, "test", cbb);
-
-    broker.broadcast(undefined, "test", "data goes here");
-
-    console.log("Doing broadcast");
-    broker.broadcast(undefined, "test", "data goes here");
-
-    console.log("Doing IGNORE");
-    broker.ignore(undefined, "test", cbb);
-
-    console.log("Doing broadcast after ignore");
-    broker.broadcast(undefined, "test", "data goes here");
-
+    /***************************************************************/
+    /* console.log("-=-==-=- FIRST LISTEN");                       */
+    /* broker.listen(undefined, "test", (msg)=>{                   */
+    /*   console.log("--GOT Message TEST, with value", msg);       */
+    /* });                                                         */
+    /*                                                             */
+    /* let cbb=(msg)=>{                                            */
+    /*   console.log("--GOT Message TEST AGAIN, with value", msg); */
+    /* };                                                          */
+    /*                                                             */
+    /* console.log("-=-==-=- SECOND LISTEN");                      */
+    /* broker.listen(undefined, "test", cbb);                      */
+    /*                                                             */
+    /* broker.broadcast(undefined, "test", "data goes here");      */
+    /*                                                             */
+    /* console.log("Doing broadcast");                             */
+    /* broker.broadcast(undefined, "test", "data goes here");      */
+    /*                                                             */
+    /* console.log("Doing IGNORE");                                */
+    /* broker.ignore(undefined, "test", cbb);                      */
+    /*                                                             */
+    /* console.log("Doing broadcast after ignore");                */
+    /* broker.broadcast(undefined, "test", "data goes here");      */
+    /*                                                             */
+    /***************************************************************/
 
     //bridge_to_parent();
-    uSACFastPackBroker.bridge_to_parent();
+
+    // Create a bridge to the upstream broker.
+    //
+    // Accepts a pairwsie list of matcher and type to automaticall forward
+    uSACFastPackBroker.bridge_to_parent(["remote_end_point"]);
     
 
     //return;
@@ -84,7 +90,7 @@
     /***********************************************************/
 
     //Test channels
-    let slave=new uSACFastPackChannel(undefined, window.broker);
+    window.slave=new uSACFastPackChannel(undefined, window.broker);
     console.log("--Slave channel ok?", slave!==undefined);
 
     /*********************************************************************/
