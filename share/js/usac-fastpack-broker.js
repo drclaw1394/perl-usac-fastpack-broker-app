@@ -170,7 +170,7 @@ class uSACFastPackBrokerBridgeWS extends uSACFastPackBrokerBridge{
 
 
       this.buffer_out_sub= (data, cb)=>{
-        console.log("---called ws buffer_out sub", data);
+        //console.log("---called ws buffer_out sub", data);
         ws.send(data[0]);
         cb  && cb(); // NOTE this is syncrhonous
       };
@@ -358,255 +358,276 @@ class WebSocketBP extends WebSocket {
 
 
 class uSACFastPackBroker {
-    constructor(){
-      this.uuid=uuid4();
-      this.default_source_id=uuid4();
-      this.ht=new HustleTable();
-      this.bridges={};
+  constructor(){
+    this.uuid=uuid4();
+    this.default_source_id=uuid4();
+    this.ht=new HustleTable();
+    this.bridges={};
 
-      this.dispatcher=(inputs)=>{
-        let source=inputs[0];
-        let messages=inputs[1];
+    this.dispatcher=(inputs)=>{
+      let source=inputs[0];
+      let messages=inputs[1];
 
-        for(let i=0; i< messages.length; i++){
-          let msg=messages[i];
-          // Do look up of message id in table
-          let entries=this.ht.dispatcher(msg.id); //this.lookup
+      for(let i=0; i< messages.length; i++){
+        let msg=messages[i];
+        // Do look up of message id in table
+        let entries=this.ht.dispatcher(msg.id); //this.lookup
 
-          for(let j=0; j< entries.length; j+=2){
-            let e=entries[j];
-            let c=entries[j+1];
+        for(let j=0; j< entries.length; j+=2){
+          let e=entries[j];
+          let c=entries[j+1];
 
-            for(let k=0; k< e.value.length; k+=2){
-              let sub=e.value[k];
-              let source_id=e.value[k+1];
-              if((source_id==undefined) || (source!= source_id)){
-                sub([source,[msg ,c]]);
-              }
+          for(let k=0; k< e.value.length; k+=2){
+            let sub=e.value[k];
+            let source_id=e.value[k+1];
+            if((source_id==undefined) || (source!= source_id)){
+              sub([source,[msg ,c]]);
             }
           }
         }
-      };
-      
+      }
+    };
 
-      this.broadcaster_sub=(client_id, kv)=>{
-        let msgs=[];
-        for(let i=0;i<kv.length; i+=2){
-          msgs.push({time: Date.now(), id:kv[i], payload:kv[i+1]});
+
+    this.broadcaster_sub=(client_id, kv)=>{
+      let msgs=[];
+      for(let i=0;i<kv.length; i+=2){
+        msgs.push({time: Date.now(), id:kv[i], payload:kv[i+1]});
+      }
+      this.dispatcher([client_id, msgs]);
+      return this;
+    };
+
+
+    this.listener_sub=(source_id, name, sub,type)=>{
+
+      if(sub instanceof uSACFastPackBrokerBridge){
+        this.add_bridge(sub);
+        //support direct addition of bridge
+        source_id=sub.source_id;
+        sub=sub.forward_message_sub;
+      }
+      //TODO check if sub is function or object
+      let object={
+        listen:{
+          source:   source_id,
+          matcher:  name,
+          type:     type,
+          sub:      sub
         }
-        this.dispatcher([client_id, msgs]);
-        return this;
       };
 
 
-      this.listener_sub=(source_id, name, sub,type)=>{
-        
-        if(sub instanceof uSACFastPackBrokerBridge){
-            this.add_bridge(sub);
-          //support direct addition of bridge
-            source_id=sub.source_id;
-            sub=sub.forward_message_sub;
-        }
-        //TODO check if sub is function or object
-        let object={
-          listen:{
-            source:   source_id,
-            matcher:  name,
-            type:     type,
-            sub:      sub
-          }
-        };
+      this.dispatcher([source_id, [{time:Date.now(), id:'0', payload:object}]]);
+
+      return this;
+    };
 
 
-        this.dispatcher([source_id, [{time:Date.now(), id:'0', payload:object}]]);
+    this.meta_handler=(spec)=>{
 
-        return this;
-      };
+      let source_id=spec[0];
+      let msgs=spec[1];
 
+      for(let i=0;i<msgs.length; i+=2){
+        let msg=msgs[i];
+        let object=msg.payload;
+        let keys=Object.keys(object);
 
-      this.meta_handler=(spec)=>{
+        for(let j=0; j<keys.length; j++){
+          let key=keys[j];
+          let value=object[key];
 
-        let source_id=spec[0];
-        let msgs=spec[1];
-
-        for(let i=0;i<msgs.length; i+=2){
-          let msg=msgs[i];
-          let object=msg.payload;
-          let keys=Object.keys(object);
-
-          for(let j=0; j<keys.length; j++){
-            let key=keys[j];
-            let value=object[key];
-
-            if(key== "listen"){
-              let name=value.matcher; 
-              let sub= value.sub;
-              delete value.sub;
-              let type= value.type;
+          if(key== "listen"){
+            let name=value.matcher; 
+            let sub= value.sub;
+            delete value.sub;
+            let type= value.type;
 
 
 
-              let found=undefined;
-              for(let k=0; k<this.ht.table.length; k++){
-                let e=this.ht.table[k];
+            let found=undefined;
+            for(let k=0; k<this.ht.table.length; k++){
+              let e=this.ht.table[k];
 
               let org_tyoe=type;
               if(!type){
                 type=RegExp(name);
               }
 
-                //if((e.matcher.toString() == name.toString()) && (e.type == type)){
-                if((e.matcher == name) && (e.type.toString() == type.toString())){
-                  e.value.push(sub, source_id);
-                  found=true;
-                  continue;
-                }
+              //if((e.matcher.toString() == name.toString()) && (e.type == type)){
+              if((e.matcher == name) && (e.type.toString() == type.toString())){
+                e.value.push(sub, source_id);
+                found=true;
+                continue;
               }
-
-
-              if(!found){
-                  let o={matcher:name, value:[sub, source_id], type:type};
-                this.ht.table.push(o);
-
-                // Reset cache as new entry will need to tested
-              }
-              this.ht.cache={};
-
             }
-            else if(key=='ignore'){
-              let name=value.matcher; 
-              let sub= value.sub;
-              delete value.sub;
-              let type= value.type;
-
-              let force_sub = value.force == "sub";
-              let force_source = value.force == "source";
-              let force_matcher = value.force == "matcher";
 
 
-              let found=false;
-              for(let k=this.ht.table.length-1; k>=0; k--){
-                let e=this.ht.table[k];
+            if(!found){
+              let o={matcher:name, value:[sub, source_id], type:type};
+              this.ht.table.push(o);
+
+              // Reset cache as new entry will need to tested
+            }
+            this.ht.cache={};
+
+          }
+          else if(key=='ignore'){
+            let name=value.matcher; 
+            let sub= value.sub;
+            delete value.sub;
+            let type= value.type;
+
+            let force_sub = value.force == "sub";
+            let force_source = value.force == "source";
+            let force_matcher = value.force == "matcher";
+
+
+            let found=false;
+            for(let k=this.ht.table.length-1; k>=0; k--){
+              let e=this.ht.table[k];
 
 
               let org_type=type;
               if(!type){
                 type=RegExp(name);
               }
-                //if((e.matcher.toString() == name.toString()) && (e.type == type)){
-                if(force_matcher || ((e.matcher == name) && (e.type.toString() == type.toString()))){
+              //if((e.matcher.toString() == name.toString()) && (e.type == type)){
+              if(force_matcher || ((e.matcher == name) && (e.type.toString() == type.toString()))){
 
                 //if((e.matcher.toString() == name.toString()) && (e.type == type)){
-                  
-                  for(let l=e.value.length-2; l >=0; l-=2){
-                    if((force_sub || (e.value[l] == sub )) && 
-                      (force_source || (e.value[l+1] == source_id))){
-                      e.value.splice(l,2);
-                      //console.log(" IGNORE SUCCUESS");
-                      found=1;
-                      continue;
-                    }
-                  }
 
-                  if(e.value.length==0){
-                      //console.log(" IGNORE SUCCUESS REMOVE ARRAY");
-                    this.ht.table.splice(k,1);
+                for(let l=e.value.length-2; l >=0; l-=2){
+                  if((force_sub || (e.value[l] == sub )) && 
+                    (force_source || (e.value[l+1] == source_id))){
+                    e.value.splice(l,2);
+                    console.log(" IGNORE SUCCUESS");
+                    found=1;
+                    continue;
                   }
-
                 }
-              }
 
-              if(found){
-                // Reset cache as entires might not match or event exist any longer
-                this.ht.cache={};
+                if(e.value.length==0){
+                  //console.log(" IGNORE SUCCUESS REMOVE ARRAY");
+                  this.ht.table.splice(k,1);
+                }
+
               }
+            }
+
+            if(found){
+              // Reset cache as entires might not match or event exist any longer
+              this.ht.cache={};
             }
           }
         }
+      }
 
 
+    };
+
+
+
+    this.ignorer_sub=(source_id, name, sub, type, force)=>{
+      let object={
+        ignore: {
+          source:     source_id,
+          matcher:    name,
+          type:       type,
+          sub:        sub,
+          force:      force
+        }
       };
 
+      this.dispatcher([source_id, [{time:Date.now(), id:'0', payload:object}]]);
 
-
-      this.ignorer_sub=(source_id, name, sub, type, force)=>{
-        let object={
-          ignore: {
-            source:     source_id,
-            matcher:    name,
-            type:       type,
-            sub:        sub,
-            force:      force
-          }
-        };
-
-        this.dispatcher([source_id, [{time:Date.now(), id:'0', payload:object}]]);
-
-        return this;
-      };
+      return this;
+    };
 
     //Bootstrap meta handler
-    
+
     this.ht.table.push({matcher:'0', value:[this.meta_handler, this.uuid], type:"exact"});
 
 
+  }
+
+  broadcast(client, name, value){
+    this.broadcaster_sub(client, [name, value]);
+  }
+
+  listen(client, name, sub, type){
+    this.listener_sub(client, name, sub, type);
+  }
+
+  ignore(client, name, sub, type, force){
+    this.ignorer_sub(client, name, sub, type, force);
+  }
+
+
+  add_bridge(bridge){
+    this.bridges[bridge.source_id]=bridge;
+  }
+
+  remove_bridge(bridge){
+    delete this.bridges[bridge.source_id];
+  }
+
+
+  // Create a bridge to the upstream broker.
+  //
+  // Accepts a pairwsie list of matcher and type to automaticall forward
+  // The resulting bridge can be manipulatea as per normal
+  // 
+  bridge_to_parent(forward, url){
+    console.log("CALLED bidge to parent");
+
+    if(this.parent_bridge){
+      return Promise.resolve(this.parent_bridge);
     }
 
-    broadcast(client, name, value){
-      this.broadcaster_sub(client, [name, value]);
-    }
-
-    listen(client, name, sub, type){
-      this.listener_sub(client, name, sub, type);
-    }
-
-    ignore(client, name, sub, type, force){
-      this.ignorer_sub(client, name, sub, type, force);
-    }
-
-
-    add_bridge(bridge){
-      this.bridges[bridge.source_id]=bridge;
-    }
-
-    remove_bridge(bridge){
-      delete this.bridges[bridge.source_id];
-    }
-
-
-    // Create a bridge to the upstream broker.
-    //
-    // Accepts a pairwsie list of matcher and type to automaticall forward
-    // The resulting bridge can be manipulatea as per normal
-    // 
-    static bridge_to_parent(forward){
-      console.log("CALLED bidge to parent");
     // Attempt to link to parent window or if top level window, attempt to
     // connect back to the host we loaded from
     //
     //let forward=["remote_end_point"];//=[".*"];
     forward||=[];   
+    url||="/fastpack/ws";
+    let resolver;
+    let p=new Promise((resolve,reject)=>{
+      resolver=resolve;
+    });
     try {
       if(window.self !== window.top){
         //Inside an iframe;
-        window.parent_bridge=new uSACFastPackBrokerBridgeFrame(broker, forward, window.top);
+        this.parent_bridge=new uSACFastPackBrokerBridgeFrame(broker, forward, window.top);
+        resolver(this.parent_bridge);
       }
       else {
         // We are the top level 
-        let ws=new WebSocket("/ws");
-        window.parent_bridge=new uSACFastPackBrokerBridgeWS(broker, forward, ws);
+        let ws=new WebSocket(url);
+        this.parent_bridge=new uSACFastPackBrokerBridgeWS(broker, forward, ws);
+        ws.addEventListener("open",()=>{
+          resolver(this.parent_bridge);
+        });
       }
-      
+
+      this.add_bridge(this.parent_bridge);
+
     }
     catch(e){
       console.log("---COULD NOT CREATE BRIDGE TO PARENT? ", e);
       // Cross origin restrictions, we are likely a iframe
       //window.parent_bridge=new uSACFastPackBrokerBridgeFrame(broker, forward, window.top);
     }
-    return window.parent_bridge;
-}
+    return p;
+  }
 
-
+  //Create a slave channel to the specified listener
+  slave_channel_connect(end_point, on_connect) {
+    let ch=new uSACFastPackChannel(undefined, this);
+    ch.connect(end_point, on_connect);
+    return ch;
+  }
 }
 
 
@@ -722,6 +743,15 @@ class uSACFastPackChannel{
     this._setup(undefined, callback);
 
     this.broker.broadcast(undefined, connection_endpoint, encoded);
+  }
+
+  close(){
+    broker.ignore(undefined, this.data_in_name, undefined, "exact", "sub");
+    broker.ignore(undefined, this.data_out_name, undefined, "exact", "sub");
+    broker.ignore(undefined, this.control_in_name, undefined, "exact", "sub");
+    broker.ignore(undefined, this.control_out_name, undefined, "exact", "sub");
+    broker.ignore(undefined, this.uuid, undefined, "begin", "sub");
+    
   }
 
 

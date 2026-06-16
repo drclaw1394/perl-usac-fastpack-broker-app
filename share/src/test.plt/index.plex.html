@@ -21,14 +21,6 @@
         console.log("ON LOAD");
         chunkLoader.ready
           .then(()=>{
-            console.log("LOAD APP HERE");
-            return chunkLoader.app();
-          })
-          .then(()=>{
-            console.log(" SHOULD LOAD CSS HERE");
-            return chunkLoader.css();
-          })
-          .then(()=>{
             // Attempt to setup coms to parent
             window.uSACFastPackBrokerTest();
 

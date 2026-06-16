@@ -12,6 +12,91 @@ use feature ":all";
 our $VERSION="v0.1.0";
 
 
+##############
+# Server side
+# ############
+use uSAC::HTTP::Middleware::Bridge::WS;
+use uSAC::HTTP;
+use uSAC::HTTP::Site;
+use uSAC::HTTP::Rex;
+use uSAC::IO;
+
+# Server side
+
+use Object::Pad;
+
+class uSAC::FastPack::Broker::App;
+
+field $_parent :param;
+
+field $_site;
+field $_clients_list;
+field $_clients
+field $_broker;
+
+
+BUILD {
+  $_clients_list=[];
+  $_clients={};
+
+
+  # Create a site to add to parent
+  $_site=uSAC::HTTP::Site->new(id=>"FastPack", delegate=>$self, prefix=>"fastpack/");
+  $_parent->add($_site);
+
+  $_broker=$_site->build_broker;
+
+  $_site->add("ws", "_ws");
+
+}
+
+method _ws {
+  sub {
+    (
+      uhm_bridge_ws(),
+      sub {
+        my $bridge= $_[PAYLOAD][0]; 
+        my $broker= $_[PAYLOAD][1]; 
+        $broker->broadcast(undef, "bridge_ws", $bridge);
+
+        asay $STDERR, "CREATED BRIDGE TO CLIENT VIA WEBSOCKET broker: $broker  with bridge $bridge";
+
+        # Forward local generated messages that match this to the client
+        $broker->listen(undef, "test",    $bridge);
+        $broker->listen(undef, "return",  $bridge);
+
+        $broker->listen(undef,  "test", sub {
+            adump $STDERR, "from broker on ws $bridge! ", @_;
+            #$bridge->forward_message_sub->([undef,[[time, "return", pack "D", 1234]]]);
+            $broker->broadcast(undef, "return", pack "D", 1234);
+          }
+        );                                                                                                               #
+        undef;
+      }
+
+
+    )
+  }
+
+}
+
+
+
+sub app {
+  sub {
+    my $parent_site=shift;
+    my %options=@_;
+    uSAC::FastPack::Broker::App->new(parent=>$parent_site, %options);
+  }
+}
+
+
+
+
+##################
+# Client side 
+##################
+
 use Data::JPack;
 use Data::JPack::App;
 use Template::Plexsite;
@@ -86,5 +171,5 @@ sub template_path {
   (undef, $share_dir);
 }
 
-1;
+__PACKAGE__
 
