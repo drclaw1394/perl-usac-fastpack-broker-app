@@ -644,8 +644,18 @@ class uSACFastPackChannel{
     
     this.on_data;
     this.on_control;
+    this.on_high_watermark;
+    this.on_low_watermark;
+
     this.data_in_name;
     this.control_in_name;
+
+    this.data_in_byte_count=0; // Reported receiption of bytes at peer
+    this.data_out_byte_count=0; // How many bytes we have sent out
+
+
+    this.high_watermark=5000000;
+    this.low_watermark=1000000;
   }
 
   _setup(sender, on_connect){
@@ -657,7 +667,10 @@ class uSACFastPackChannel{
       this.control_out_name=this.data_out_name+"/CTL";   
 
       this.broker.listen(undefined, this.control_in_name, (data)=>{
-        this.on_control && this.on_control(data[1][0].payload);
+        this.data_in_byte_count+=data[1][0].payload.length;
+        let p=fastpack.decode_meta_payload(data[1][0].payload);
+        this.on_control && this.on_control(p);
+        //this.on_control && this.on_control(data[1][0].payload);
       },
         "exact"
       );
@@ -672,13 +685,15 @@ class uSACFastPackChannel{
 
       //Control channels to listen for
       this.broker.listen(undefined, this.data_in_name, (data)=>{
+        this.data_in_byte_count+=data[1][0].payload.length;
         this.on_data && this.on_data(data[1][0].payload);
       },
         "exact"
       );
 
 
-      this.send_control("");
+      //this.send_control("");
+      this.send_control({});
       on_connect && on_connect(this);
 
     }
@@ -692,6 +707,7 @@ class uSACFastPackChannel{
       let first=true;
       this.broker.listen(undefined,this.control_in_name, (data)=>{
 
+        this.data_in_byte_count+=data[1][0].payload.length;
         if(first){
           //Check if we are a bridge and do auto forwarding
           let sender=data[0];
@@ -703,18 +719,50 @@ class uSACFastPackChannel{
           first=false;
         }
         else {
-          this.on_control  && this.on_control(data[1][0].payload);
+          let p=fastpack.decode_meta_payload(data[1][0].payload);
+          if(p.command == "back_pressure"){
+            console.log("We have send this much ", this.data_out_byte_count);
+            console.log("We have acked this much ", p.byte_count);
+            console.log("backlog is", this.data_out_byte_count - p.byte_count);
+
+            //Trigger high and low watermarks if needed
+            this.data_out_byte_count -= p.byte_count;
+
+
+            if(this.data_out_byte_count<this.low_watermark){
+              this.on_low_watermark && this.on_low_watermark();
+            }
+
+            //this.on_control  && this.on_control(data[1][0].payload);
+          }
+          // Also pass the control message?
+          this.on_control && this.on_control(p);
+
 
         }
       },
         "exact"
       );
 
+
+
       this.broker.listen(undefined,this.data_in_name, (data)=>{
+        this.data_in_byte_count+=data[1][0].payload.length;
         this.on_data  && this.on_data(data[1][0].payload);
       },
         "exact");
     }
+    // Setup back pressure
+      let scope=this;
+      this.byte_timer=setInterval(()=>{
+        // If the channel is open we want to send a control message to the peer
+        // with how many bytes habe been recieved ( and processed ?)
+        let temp=scope.data_in_byte_count;
+        scope.data_in_byte_count=0;     //Relative to last message
+        if(temp){
+          scope.send_control({command: "back_pressure", "byte_count": temp});
+        }
+      },100);
 
 
   }
@@ -777,12 +825,20 @@ class uSACFastPackChannel{
     "exact");
   }
 
-  send_data(data){
+  send_data(data, cb){
+    // Check that we are no more than 
+    this.data_out_byte_count+=data.length;
     this.broker.broadcast(undefined, this.data_out_name, data);
+    if(this.data_out_byte_count>=this.high_watermark){
+      setTimeout(()=>{this.on_high_watermark && this.on_high_watermark();
+      },0);
+    }
   }
 
   send_control(data){
-    this.broker.broadcast(undefined, this.control_out_name, data);
+    let p=fastpack.encode_meta_payload(data);
+    this.data_out_byte_count+=p.length;
+    this.broker.broadcast(undefined, this.control_out_name, p);
   }
 
 
