@@ -153,7 +153,16 @@ class uSACFastPackBrokerBridge {
     let dispatch=this.broker.dispatcher;
     let obj={ignore: { source: this.source_id, sub: this.forward_message_sub, force:"matcher source"}};
     dispatch([this.source_id,[{ time: Date.now(), id: 0, payload: obj}]]);
+
+    let list=delete this.broker.tagged_channels[this.source_id]||[];
+    
+    for(let i=0; i<list.length; i++){
+      list[i].tag=undefined;
+      list[i].close();
+    }
+    list=[];
   }
+
 }
 
 
@@ -363,6 +372,7 @@ class uSACFastPackBroker {
     this.default_source_id=uuid4();
     this.ht=new HustleTable();
     this.bridges={};
+    this.tagged_channels={};
 
     this.dispatcher=(inputs)=>{
       let source=inputs[0];
@@ -628,6 +638,30 @@ class uSACFastPackBroker {
     ch.connect(end_point, on_connect);
     return ch;
   }
+
+
+  add_tagged_channel (tag, ch){
+    let list=this.tagged_channels[tag]||=[];
+
+    if(list.find((e)=>{return e==ch})){
+
+    }
+    else {
+      list.push(ch);
+    }
+
+  }
+
+  remove_tagged_channel(tag, ch){
+    let list=this.tagged_channels[tag]; 
+    if(list){
+      let index=list.findIndex((e)=>{return e==ch});
+      if(index != -1){
+        list.splice(index,1);
+      }
+    }
+  }
+
 }
 
 
@@ -641,6 +675,7 @@ class uSACFastPackChannel{
     this.uuid=uuid||uuid4();
     this.mode=mode;
     this.broker=broker;
+    this.tag=undefined;
     
     this.on_data;
     this.on_control;
@@ -656,6 +691,10 @@ class uSACFastPackChannel{
 
     this.high_watermark=5000000;
     this.low_watermark=1000000;
+
+    if(this.tag){
+      this.broker.add_tagged_channel(this.tag, this);
+    }
   }
 
   _setup(sender, on_connect){
@@ -680,6 +719,8 @@ class uSACFastPackChannel{
         // Channel initiated from remote peer/bridge
         // So we need to forward messages. This will add it to the broker if it
         // doesn't already exist
+        this.tag=sender;
+        this.broker.add_tagged_channel(this.tag,this);
         this.broker.listen(undefined, this.uuid, bridge, "begin");
       }
 
@@ -713,6 +754,8 @@ class uSACFastPackChannel{
           let sender=data[0];
           let bridge=this.broker.bridges[sender];
           if(bridge){
+            this.tag=sender;
+            this.broker.add_tagged_channel(this.tag,this);
             this.broker.listen(undefined, this.uuid, bridge, "begin");
           }
           on_connect && on_connect(this);
@@ -721,9 +764,9 @@ class uSACFastPackChannel{
         else {
           let p=fastpack.decode_meta_payload(data[1][0].payload);
           if(p.command == "back_pressure"){
-            console.log("We have send this much ", this.data_out_byte_count);
-            console.log("We have acked this much ", p.byte_count);
-            console.log("backlog is", this.data_out_byte_count - p.byte_count);
+            //console.log("We have send this much ", this.data_out_byte_count);
+            //console.log("We have acked this much ", p.byte_count);
+            //console.log("backlog is", this.data_out_byte_count - p.byte_count);
 
             //Trigger high and low watermarks if needed
             this.data_out_byte_count -= p.byte_count;
@@ -799,6 +842,11 @@ class uSACFastPackChannel{
     broker.ignore(undefined, this.control_in_name, undefined, "exact", "sub");
     broker.ignore(undefined, this.control_out_name, undefined, "exact", "sub");
     broker.ignore(undefined, this.uuid, undefined, "begin", "sub");
+    clearInterval(this.byte_timer);
+
+    if(this.tag){
+      this.broker.remove_tagged_channel(this.tag, this);
+    }
     
   }
 
