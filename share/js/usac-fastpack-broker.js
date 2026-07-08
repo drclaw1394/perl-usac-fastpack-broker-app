@@ -84,6 +84,7 @@ class uSACFastPackBrokerBridge {
 
 
     this.forward_message_sub= (arr, cb)=>{
+      console.log("Normal forward message sub");
       let source=arr.shift();
       let inputs=arr[0];
 
@@ -206,17 +207,94 @@ class uSACFastPackBrokerBridgeFrame extends uSACFastPackBrokerBridge {
   constructor(broker, forward, peer){
     super(broker, forward);
     this.peer=peer;
+    console.log("Adding listener for message to ", peer);
 
     //Set up an event listener to peer window
+    // These messages are send with cloning and transferrable objects.
+    // The serialising is done in browser, not via fast pack.
+    //
     peer.addEventListener('message', (event)=>{
-      this.on_read_handler([new Uint8Array(event.data)], undefined); 
+      console.log("GOT Message in frame bridge", event);
+      // CHECK IF THE MESSAGE IS  FAST PACK. 
+      // TIME, ID, and PAYLOAD need to be present
+      console.log("FP message is", event.data);
+      if((event.data.time!= undefined) && (event.data.id != undefined)){
+        console.log("GOT fastpack message");
+        //this.on_read_handler([new Uint8Array(event.data)], undefined); 
+        this.on_read_handler([event.data], undefined); 
+      }
+      else {
+        console.log("GOT NON fastpack message");
+        // THis is a non fp message
+      }
     });
 
-    this.buffer_out_sub= (data, cb)=>{
-      peer.postMessage(data[0],"*");
-      cb  && cb(); // NOTE this is syncrhonous
+    /**********************************************/
+    /* this.buffer_out_sub= (data, cb)=>{         */
+    /*   peer.postMessage(data[0],"*");           */
+    /*   cb  && cb(); // NOTE this is syncrhonous */
+    /* };                                         */
+    /**********************************************/
+    this.on_read_handler=(arr, cb)=>{
+
+      //let args={buffer:undefined, outputs:[], ns:this.rx_namespace};
+      //args.buffer=arr[0];
+      let args={outputs:[arr[0]]}; 
+      //fastpack.decode_message(args);
+      for(let i=0; i <args.outputs.length; i++){
+        let msg=args.outputs[i];
+        if(msg.id == '0'){
+          msg.payload=fastpack.decode_meta_payload(msg.payload);
+          if(msg.payload.listen){
+            msg.sub=this.forward_message_sub;
+          }
+
+          if (msg.payload.ignore){
+            msg.sub=this.forward_message_sub;
+          }
+          //TODO: Possible remote listen.. 
+
+
+        }
+      }
+
+      this.broker.dispatcher([this.source_id, args.outputs], cb); 
+
     };
 
+    // Custom forward message sub to handle transferable objects
+    this.forward_message_sub= (arr, cb)=>{
+      console.log("IN FORWARD MESSAGE SUB for FRAME BRIDGE", arr);
+      let source=arr.shift();
+      let inputs=arr[0];
+
+
+      let arg={buffer:undefined, inputs:undefined, ns:this.tx_namespace};
+      let _inputs=[];
+      for(let i=0;i<inputs.length;i+=2){
+
+        let msg=inputs[i];
+        if(msg.id==0){
+          msg.payload= fastpack.encode_meta_payload(msg.payload);
+        }
+        //_inputs.push(msg);
+        //arg.inputs=[msg];
+        //this.buffer_out_sub && this.buffer_out_sub([msg], cb);
+        peer.postMessage(msg, msg.transfer);
+      }
+
+      //Do callback
+      cb && cb()
+
+      // We don't what to encode the message, as this bridge is only used in
+      // browser environmet and utilises postMessage
+      //arg.inputs=_inputs;
+      //fastpack.encode_message(arg);
+
+      
+      
+      //this.buffer_out_sub && this.buffer_out_sub([arg.buffer], cb);
+    };
   }
 }
 
@@ -401,8 +479,8 @@ class uSACFastPackBroker {
 
     this.broadcaster_sub=(client_id, kv)=>{
       let msgs=[];
-      for(let i=0;i<kv.length; i+=2){
-        msgs.push({time: Date.now(), id:kv[i], payload:kv[i+1]});
+      for(let i=0;i<kv.length; i+=3){
+          msgs.push({time: Date.now(), id:kv[i], payload:kv[i+1], transfer:kv[i+2]});
       }
       this.dispatcher([client_id, msgs]);
       return this;
@@ -562,8 +640,8 @@ class uSACFastPackBroker {
 
   }
 
-  broadcast(client, name, value){
-    this.broadcaster_sub(client, [name, value]);
+  broadcast(client, name, value, transfer){
+    this.broadcaster_sub(client, [name, value, transfer]);
   }
 
   listen(client, name, sub, type){
@@ -590,7 +668,7 @@ class uSACFastPackBroker {
   // The resulting bridge can be manipulatea as per normal
   // 
   bridge_to_parent(forward, url){
-    console.log("CALLED bidge to parent");
+    console.log("CALLED bidge to parent", forward, url);
 
     if(this.parent_bridge){
       return Promise.resolve(this.parent_bridge);
@@ -607,13 +685,23 @@ class uSACFastPackBroker {
       resolver=resolve;
     });
     try {
-      if(window.self !== window.top){
-        //Inside an iframe;
-        this.parent_bridge=new uSACFastPackBrokerBridgeFrame(broker, forward, window.top);
+      if(window.opener){
+        console.log("Opening bridge to operner");
+        // THis is a pop up window opened by opener
+        //Inside an iframe or pop up
+        this.parent_bridge=new uSACFastPackBrokerBridgeFrame(broker, forward, window.opener);
+        resolver(this.parent_bridge);
+
+      }
+      else if(window !== window.parent){
+        console.log("Opening bridge to parent from iframe", window.parent);
+        //Inside an iframe 
+        this.parent_bridge=new uSACFastPackBrokerBridgeFrame(broker, forward, window.parent);
         resolver(this.parent_bridge);
       }
       else {
-        // We are the top level 
+        console.log("Opening bridge to server .. we are top");
+        // We are the parent
         let ws=new WebSocket(url);
         this.parent_bridge=new uSACFastPackBrokerBridgeWS(broker, forward, ws);
         ws.addEventListener("open",()=>{
@@ -737,6 +825,47 @@ class uSACFastPackChannel{
       this.send_control({});
       on_connect && on_connect(this);
 
+    }
+    else if(this.mode== "proxy"){
+      // Proxy mode we just manage forwarding
+      /*****************************************************************/
+      /* this.data_in_name=this.uuid+"/MISO";                          */
+      /* this.data_out_name=this.uuid+"/MOSI";                         */
+      /* this.control_in_name=this.data_in_name+"/CTL";                */
+      /* this.control_out_name=this.data_out_name+"/CTL";              */
+      /*                                                               */
+      /* this.broker.listen(undefined, this.control_in_name, (data)=>{ */
+      /*   this.data_in_byte_count+=data[1][0].payload.length;         */
+      /*   let p=fastpack.decode_meta_payload(data[1][0].payload);     */
+      /*   this.on_control && this.on_control(p);                      */
+      /*   //this.on_control && this.on_control(data[1][0].payload);   */
+      /* },                                                            */
+      /*   "exact"                                                     */
+      /* );                                                            */
+      /*                                                               */
+      /*****************************************************************/
+
+      let bridge=this.broker.bridges[sender];
+      if(bridge){
+        // Channel initiated from remote peer/bridge
+        // So we need to forward messages. This will add it to the broker if it
+        // doesn't already exist
+        this.tag=sender;
+        this.broker.add_tagged_channel(this.tag, this);
+        this.broker.listen(undefined, this.uuid, bridge, "begin");
+        
+        let temp=this.broker.listen(sender, this.uuid, (data)=>{
+          let upstream=data[0]; //Upstream sender
+
+          let upstream_bridge=this.broker.bridges[upstream];
+          if(upstream_bridge){
+            this.broker.listen(undefined, this.uuid, upstream_bridge, "begin");
+
+            // We intercepted the first message now ingore the rest
+            this.broker.ingore(undefined, this.uuid, temp, "begin");
+          }
+        }, "begin");
+      }
     }
     else{
       this.data_in_name=this.uuid+"/MOSI";   
@@ -873,10 +1002,28 @@ class uSACFastPackChannel{
     "exact");
   }
 
-  send_data(data, cb){
+  static proxy(connection_endpoint, broker){
+
+      broker.listen(undefined, connection_endpoint, (data)=>{
+
+      let sender=data[0];
+      let codec=new TextDecoder();
+      let value= data[1][0].payload;
+      let decoded=codec.decode(value);
+
+      let object=JSON.parse(decoded);
+
+      let channel=new uSACFastPackChannel(object.uuid, broker, "proxy");
+      
+      channel._setup(sender, callback);
+    },
+    "exact");
+  }
+
+  send_data(data, transfer){
     // Check that we are no more than 
     this.data_out_byte_count+=data.length;
-    this.broker.broadcast(undefined, this.data_out_name, data);
+    this.broker.broadcast(undefined, this.data_out_name, data, transfer);
     if(this.data_out_byte_count>=this.high_watermark){
       setTimeout(()=>{this.on_high_watermark && this.on_high_watermark();
       },0);
