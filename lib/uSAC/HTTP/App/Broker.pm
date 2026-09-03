@@ -1,8 +1,9 @@
 # FastPack application (web client)
-package uSAC::FastPack::Broker::App;
+#package uSAC::FastPack::Broker::App;
+package uSAC::HTTP::App::Broker;
 =head1 NAME
 
-uSAC::FastPack::Broker::App - Web client files for uSAC::FastPack::Broker
+uSAC::HTTP::App::Broker - Web server interface  and files for uSAC::HTTP::App::Broker
 
 =cut
 
@@ -25,7 +26,7 @@ use uSAC::IO;
 
 use Object::Pad;
 
-class uSAC::FastPack::Broker::App;
+class uSAC::HTTP::App::Broker;
 
 field $_parent :param;
 
@@ -86,7 +87,8 @@ sub app {
   sub {
     my $parent_site=shift;
     my %options=@_;
-    uSAC::FastPack::Broker::App->new(parent=>$parent_site, %options);
+    #uSAC::FastPack::Broker::App->new(parent=>$parent_site, %options);
+    uSAC::HTTP::App::Broker->new(parent=>$parent_site, %options);
   }
 }
 
@@ -107,7 +109,7 @@ use File::ShareDir ":ALL";
 use File::Path qw<make_path>;
 use File::Basename qw<dirname>;
 
-my $share_dir=dist_dir "uSAC-FastPack-Broker-App";
+my $share_dir=dist_dir "uSAC-HTTP-App-Broker";
 
 
 # Return the paths of sourse files
