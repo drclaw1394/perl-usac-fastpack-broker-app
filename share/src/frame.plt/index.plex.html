@@ -13,8 +13,8 @@
   use Data::FastPack::App;
   Data::FastPack::App::add_to_jpack_container(sys_path_build);
 
-  use uSAC::FastPack::Broker::App;
-  uSAC::FastPack::Broker::App::add_to_jpack_container(sys_path_build);
+  use uSAC::HTTP::App::Broker;
+  uSAC::HTTP::App::Broker::add_to_jpack_container(sys_path_build);
 
 }
 ]}

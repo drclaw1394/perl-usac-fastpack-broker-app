@@ -2,8 +2,9 @@
 
   output location=>"test", inline_only=>1;
   inherit Data::JPack::App;
-  inject Data::JPack::Bootstrap::App;
-  inject uSAC::FastPack::Broker::App;
+
+  inject uSAC::HTTP::App::Bootstrap;
+  inject uSAC::HTTP::App::Broker;
 
 
 
