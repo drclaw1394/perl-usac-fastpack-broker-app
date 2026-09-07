@@ -100,10 +100,10 @@ sub app {
 ##################
 
 use Data::JPack;
-use Data::JPack::App;
+#use uSAC::HTTP::App::Broker;
 use Template::Plexsite;
 
-use Data::FastPack::App;
+use uSAC::HTTP::App::FastPack;
 use File::ShareDir ":ALL";
 
 use File::Path qw<make_path>;
@@ -147,9 +147,9 @@ sub add_to_container {
 
   return unless $t isa Template::Plexsite;
 
-  Data::FastPack::App->add_to_container($t);
+  uSAC::HTTP::App::FastPack->add_to_container($t);
 
-  Data::JPack::App->localize_table ($t, sub {
+  uSAC::HTTP::App::JPack->localize_table ($t, sub {
 
     my @paths=(js_paths);
     for(@paths){
